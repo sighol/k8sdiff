@@ -12,36 +12,41 @@ from pygments.formatters import TerminalFormatter
 from pygments.lexers.data import YamlLexer
 from pygments.lexers.diff import DiffLexer
 
+def sort_list_of_dicts(obj: list):
+    if "kind" in obj[0]:
+        obj.sort(key=lambda x: (x["kind"]))
+    if "metadata" in obj[0] and "name" in obj[0]["metadata"]:
+        obj.sort(key=lambda x: x["metadata"]["name"])
+    if "name" in obj[0]:
+        obj.sort(key=lambda x: x["name"])
 
-def flatten(obj, key: str = None):
+
+def reorder_dict(obj, key: str = None, depth=0):
     if isinstance(obj, list):
         if len(obj) > 0 and isinstance(obj[0], dict):
-            if "name" in obj[0]:
-                obj.sort(key=lambda x: x["name"])
-            else:
-                if "metadata" in obj[0] and "name" in obj[0]["metadata"]:
-                    obj.sort(key=lambda x: x["metadata"]["name"])
-            return [flatten(child) for child in obj]
+            sort_list_of_dicts(obj)
+            return [reorder_dict(child, depth=depth+1) for child in obj]
         else:
             return obj
     elif isinstance(obj, dict):
-        return {key: flatten(value, key=key) for key, value in obj.items()}
+        return {key: reorder_dict(value, key=key, depth=depth+1) for key, value in obj.items()}
     else:
         return obj
 
 
-def flatten_file(filepath):
+def reorder_file(filepath):
     path = pathlib.Path(filepath)
     with path.open("r") as file:
         files = list(yaml.load_all(file, yaml.FullLoader))
+        sort_list_of_dicts(files)
         output = []
         for file in files:
-            output.append(flatten(file))
+            output.append(reorder_dict(file))
     return output
 
 
-def flatten_file_to_list_of_str(filepath):
-    list_of_obj = flatten_file(filepath)
+def reorder_file_to_str_list(filepath):
+    list_of_obj = reorder_file(filepath)
     stream = io.StringIO()
     yaml.dump_all(list_of_obj, stream)
     s = stream.getvalue()
@@ -65,11 +70,11 @@ def main():
 
     args = p.parse_args()
 
-    flattened1 = flatten_file_to_list_of_str(args.FILE1)
+    flattened1 = reorder_file_to_str_list(args.FILE1)
     if not args.FILE2:
         print(highlight_if_isatty("\n".join(flattened1), YamlLexer(), TerminalFormatter()))
     else:
-        flattened2 = flatten_file_to_list_of_str(args.FILE2)
+        flattened2 = reorder_file_to_str_list(args.FILE2)
 
         output = []
         diff = difflib.unified_diff(

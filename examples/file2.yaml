@@ -1,0 +1,107 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    app.kubernetes.io/name: my-name
+    team: service-team
+  name: my-name2
+  namespace: my-namespace
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: my-app
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+  labels:
+    app: service-app
+    team: service-team
+  name: my-name
+  namespace: my-namespace
+spec:
+  externalTrafficPolicy: This one is changed
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 443
+  selector:
+    app: my-app
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: my-app
+    team: service-team
+  name: my-name
+  namespace: my-namespace
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+        team: Team nr. 2
+    spec:
+      containers:
+      - image: my-image
+        name: my-name
+        ports:
+        - containerPort: 9001
+          name: metrics
+        - containerPort: 8081
+          name: api
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 8000Mi
+          requests:
+            cpu: 1000m
+            memory: 8000Mi
+      - env:
+        - name: ENABLE_SSL
+          value: "true"
+        - name: SERVICE_PORT_ENV_NAME
+          value: "8081"
+        - name: SERVICE_HOST_ENV_NAME
+          value: 127.0.0.1
+        image: another-image
+        name: nginx
+        ports:
+        - containerPort: 443
+          name: https
+        readinessProbe:
+          exec:
+            command:
+            - status
+            - /usr/bin/status-switch.sh
+          initialDelaySeconds: 15
+          periodSeconds: 3
+        resources:
+          limits:
+            cpu: 1200m
+            memory: 4Gi
+        volumeMounts:
+        - mountPath: /etc/secrets
+          name: my-name-cluster-tls
+          readOnly: true
+      volumes:
+      - name: my-name-cluster-tls
+        secret:
+          items:
+          - key: tls.key
+            path: proxykey
+          - key: tls.crt
+            path: proxycert
+          secretName: my-secret
