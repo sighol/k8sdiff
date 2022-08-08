@@ -1,0 +1,86 @@
+#!/usr/bin/python
+
+import argparse
+import difflib
+import io
+import pathlib
+import sys
+
+import yaml
+from pygments import highlight
+from pygments.formatters import TerminalFormatter
+from pygments.lexers.data import YamlLexer
+from pygments.lexers.diff import DiffLexer
+
+
+def flatten(obj, key: str = None):
+    if isinstance(obj, list):
+        if len(obj) > 0 and isinstance(obj[0], dict):
+            if "name" in obj[0]:
+                obj.sort(key=lambda x: x["name"])
+            else:
+                if "metadata" in obj[0] and "name" in obj[0]["metadata"]:
+                    obj.sort(key=lambda x: x["metadata"]["name"])
+            return [flatten(child) for child in obj]
+        else:
+            return obj
+    elif isinstance(obj, dict):
+        return {key: flatten(value, key=key) for key, value in obj.items()}
+    else:
+        return obj
+
+
+def flatten_file(filepath):
+    path = pathlib.Path(filepath)
+    with path.open("r") as file:
+        files = list(yaml.load_all(file, yaml.FullLoader))
+        output = []
+        for file in files:
+            output.append(flatten(file))
+    return output
+
+
+def flatten_file_to_list_of_str(filepath):
+    list_of_obj = flatten_file(filepath)
+    stream = io.StringIO()
+    yaml.dump_all(list_of_obj, stream)
+    s = stream.getvalue()
+    stream.close()
+
+    return s.splitlines()
+
+
+def highlight_if_isatty(content, lexer, formatter):
+    if sys.stdout.isatty():
+        return highlight(content, lexer, formatter)
+    else:
+        return content
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("FILE1")
+    p.add_argument("FILE2", nargs="?")
+    p.add_argument("-n", help="number of context lines", type=int, default=3)
+
+    args = p.parse_args()
+
+    flattened1 = flatten_file_to_list_of_str(args.FILE1)
+    if not args.FILE2:
+        print(highlight_if_isatty("\n".join(flattened1), YamlLexer(), TerminalFormatter()))
+    else:
+        flattened2 = flatten_file_to_list_of_str(args.FILE2)
+
+        output = []
+        diff = difflib.unified_diff(
+            flattened1, flattened2, fromfile=args.FILE1, tofile=args.FILE2, n=args.n
+        )
+        diff = list(diff)
+        for line in diff:
+            output.append(line)
+
+        print(highlight_if_isatty("\n".join(output), DiffLexer(), TerminalFormatter()))
+
+
+if __name__ == "__main__":
+    main()
